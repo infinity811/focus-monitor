@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Focus Monitor</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0d0d0d;--bg2:#141414;--bg3:#1a1a1a;--border:#2a2a2a;
+  --text:#e8e8e6;--muted:#999;--hint:#6a6a6a;
+  --amber:#EF9F27;--amber-d:#BA7517;--amber-bg:#1a1200;
+  --green:#97C459;--green-d:#639922;--green-bg:#0a1400;
+  --red:#F09595;--red-d:#E24B4A;--red-bg:#1a0000;
+  --blue:#5B9BD5;--blue-d:#3A7CC0;--blue-bg:#0a1220;
+  --purple:#B07ED9;--purple-d:#8A5CB8;--purple-bg:#140a1a;
+  --mono:'JetBrains Mono','Fira Code','Courier New',monospace;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* HEADER */
+.hdr{display:flex;align-items:center;justify-content:space-between;padding:0 18px;height:46px;border-bottom:1px solid var(--border);background:var(--bg2);flex-shrink:0}
+.hdr-brand{display:flex;align-items:center;gap:10px}
+.hdr-brand span{font-family:var(--mono);font-size:12px;letter-spacing:0.12em;color:var(--amber);font-weight:400}
+.hdr-right{display:flex;align-items:center;gap:10px}
+.clock{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.pill{display:flex;align-items:center;gap:6px;padding:4px 10px;border-radius:20px;font-size:10px;letter-spacing:0.08em;font-family:var(--mono);border:1px solid transparent;transition:all 0.3s}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.hdr-btn{background:var(--bg3);color:var(--muted);border:1px solid var(--border);padding:3px 10px;border-radius:4px;cursor:pointer;font-size:9px;letter-spacing:0.05em;font-family:var(--mono);transition:all 0.2s}
+.hdr-btn:hover{color:var(--amber);border-color:var(--amber-d)}
+.hdr-btn.active{color:var(--amber);border-color:var(--amber);background:var(--amber-bg)}
+
+/* LAYOUT */
+.body{display:grid;grid-template-columns:minmax(220px,25%) 1fr;flex:1;overflow:hidden}
+
+/* CAM PANEL */
+.cam-panel{border-right:1px solid var(--border);display:flex;flex-direction:column;background:#000;overflow:hidden}
+.cam-view{position:relative;flex:1;background:#050505;overflow:hidden}
+#vid{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+#cnv{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);display:block}
+.cam-corners .brk{position:absolute;width:18px;height:18px;border-color:rgba(239,159,39,0.5);border-style:solid}
+.brk.tl{top:10px;left:10px;border-width:1.5px 0 0 1.5px}
+.brk.tr{top:10px;right:10px;border-width:1.5px 1.5px 0 0}
+.brk.bl{bottom:10px;left:10px;border-width:0 0 1.5px 1.5px}
+.brk.br{bottom:10px;right:10px;border-width:0 1.5px 1.5px 0}
+.state-badge{position:absolute;bottom:10px;left:50%;transform:translateX(-50%);font-size:9px;letter-spacing:0.15em;padding:3px 12px;background:rgba(0,0,0,0.75);border:1px solid currentColor;border-radius:2px;font-family:var(--mono);white-space:nowrap}
+.no-cam{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);font-size:12px;text-align:center;padding:24px;line-height:1.7;background:#050505}
+.no-cam svg{opacity:0.2}
+.no-cam h3{color:var(--text);font-size:13px;font-weight:500;margin-top:4px}
+.no-cam p{font-size:11px;color:var(--hint);max-width:200px}
+.cam-btn{background:var(--bg3);color:var(--amber);border:1px solid var(--amber-d);padding:6px 16px;border-radius:4px;cursor:pointer;font-size:11px;letter-spacing:0.05em;font-family:var(--mono);margin-top:6px;transition:background 0.2s}
+.cam-btn:hover{background:var(--amber-bg)}
+
+/* Calibration overlay */
+.calib-overlay{position:absolute;inset:0;background:rgba(0,0,0,0.8);display:none;flex-direction:column;align-items:center;justify-content:center;gap:12px;z-index:10}
+.calib-overlay.on{display:flex}
+.calib-ring{width:80px;height:80px;border:2px solid var(--amber);border-radius:50%;display:flex;align-items:center;justify-content:center;animation:pulse 1.5s ease infinite}
+.calib-ring-inner{width:12px;height:12px;background:var(--amber);border-radius:50%}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.6;transform:scale(1.08)}}
+.calib-text{font-family:var(--mono);font-size:11px;color:var(--amber);text-align:center;line-height:1.6}
+.calib-countdown{font-family:var(--mono);font-size:28px;color:var(--amber)}
+
+/* Posture indicator on cam */
+.posture-indicator{position:absolute;top:10px;left:50%;transform:translateX(-50%);font-size:9px;letter-spacing:0.1em;padding:3px 10px;background:rgba(0,0,0,0.75);border:1px solid var(--green);border-radius:2px;font-family:var(--mono);color:var(--green);display:none}
+.posture-indicator.warn{border-color:var(--amber);color:var(--amber)}
+.posture-indicator.bad{border-color:var(--red-d);color:var(--red-d)}
+
+.raw-stats{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--border);background:var(--bg2)}
+.rs{padding:8px 10px;border-right:1px solid var(--border)}
+.rs:last-child{border-right:none}
+.rs-l{font-size:8px;letter-spacing:0.1em;color:var(--hint);text-transform:uppercase;margin-bottom:3px;font-family:var(--mono)}
+.rs-v{font-size:14px;font-weight:400;font-family:var(--mono);color:var(--amber)}
+
+/* DASHBOARD */
+.dash{overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;background:var(--bg)}
+
+/* METRIC CARDS */
+.metric-row{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.mc{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;position:relative;overflow:hidden}
+.mc::after{content:'';position:absolute;top:0;left:0;right:0;height:1px}
+.mc.amber::after{background:var(--amber)}
+.mc.green::after{background:var(--green)}
+.mc.red::after{background:var(--red-d)}
+.mc.blue::after{background:var(--blue)}
+.mc.purple::after{background:var(--purple)}
+.mc-lbl{font-size:8px;letter-spacing:0.12em;color:var(--muted);text-transform:uppercase;margin-bottom:4px;font-family:var(--mono)}
+.mc-val{font-size:20px;font-weight:400;font-family:var(--mono);line-height:1}
+.mc-sub{font-size:9px;color:var(--hint);margin-top:3px}
+
+/* SECTIONS */
+.sec{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px}
+.sec-title{font-size:8px;letter-spacing:0.12em;color:var(--muted);text-transform:uppercase;margin-bottom:10px;font-family:var(--mono);display:flex;justify-content:space-between;align-items:center}
+.sec-title-right{display:flex;gap:8px;align-items:center}
+
+/* Two-col row */
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+
+/* FOCUS BARS */
+.fb-row{margin-bottom:10px}
+.fb-hdr{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+.fb-lbl{font-size:11px;color:var(--muted)}
+.fb-pct{font-size:16px;font-weight:400;font-family:var(--mono)}
+.fbar{height:3px;background:var(--border);border-radius:2px;overflow:hidden}
+.fbar-fill{height:100%;border-radius:2px;transition:width 0.6s ease}
+
+/* POSE */
+.pose-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.pi-lbl{font-size:8px;letter-spacing:0.1em;color:var(--hint);text-transform:uppercase;margin-bottom:5px;font-family:var(--mono)}
+.pi-track{height:3px;background:var(--border);border-radius:2px;position:relative;margin-bottom:4px}
+.pi-center{position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;background:var(--hint);transform:translateX(-50%)}
+.pi-fill{position:absolute;top:0;bottom:0;border-radius:2px;transition:all 0.15s ease}
+.pi-val{font-size:12px;font-family:var(--mono)}
+.pi-zone{font-size:9px;color:var(--muted);margin-top:1px}
+
+/* POSTURE SECTION */
+.posture-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.posture-item{text-align:center}
+.posture-icon{font-size:20px;margin-bottom:4px}
+.posture-label{font-size:8px;letter-spacing:0.1em;color:var(--hint);text-transform:uppercase;font-family:var(--mono);margin-bottom:2px}
+.posture-val{font-size:14px;font-family:var(--mono)}
+
+/* STREAK */
+.streak-row{display:flex;gap:20px;align-items:center}
+.streak-item{text-align:center}
+.streak-num{font-size:28px;font-family:var(--mono);line-height:1}
+.streak-lbl{font-size:9px;color:var(--muted);margin-top:2px;font-family:var(--mono)}
+.streak-fire{font-size:10px;margin-top:2px}
+
+/* GOAL */
+.goal-ring-wrap{display:flex;align-items:center;gap:16px}
+.goal-ring{position:relative;width:60px;height:60px}
+.goal-ring svg{transform:rotate(-90deg)}
+.goal-ring-pct{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:14px}
+.goal-info{display:flex;flex-direction:column;gap:4px}
+.goal-info span{font-size:11px;font-family:var(--mono);color:var(--muted)}
+.goal-set{display:flex;gap:6px;align-items:center;margin-top:4px}
+.goal-set input{width:50px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:3px 6px;font-family:var(--mono);font-size:11px;border-radius:3px;text-align:center}
+.goal-set label{font-size:9px;color:var(--hint);font-family:var(--mono)}
+
+/* DROWSINESS */
+.drowsy-bar{display:flex;align-items:center;gap:10px}
+.drowsy-level{flex:1;height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.drowsy-fill{height:100%;border-radius:3px;transition:width 0.6s ease,background 0.3s}
+.drowsy-label{font-family:var(--mono);font-size:12px;min-width:70px}
+.drowsy-stats{display:flex;gap:16px;margin-top:8px}
+.drowsy-stat{font-size:10px;color:var(--muted);font-family:var(--mono)}
+.drowsy-stat b{color:var(--text);font-weight:400}
+
+/* TIMELINE */
+.tl-bars{display:flex;gap:2px;align-items:flex-end;height:52px}
+.tl-bar{flex:1;border-radius:1px;min-height:4px;transition:height 0.3s ease;cursor:default}
+
+/* HEATMAP */
+.heatmap-wrap{overflow-x:auto}
+.heatmap{display:grid;grid-template-rows:repeat(4,12px);grid-auto-flow:column;gap:2px}
+.hm-cell{width:12px;height:12px;border-radius:2px;background:var(--border);cursor:default;transition:background 0.2s}
+.hm-labels{display:flex;justify-content:space-between;margin-top:4px;font-size:8px;color:var(--hint);font-family:var(--mono)}
+
+/* EVENTS */
+.ev-list{display:flex;flex-direction:column;gap:0;max-height:100px;overflow-y:auto}
+.ev{display:flex;gap:10px;font-size:10px;padding:4px 0;border-bottom:1px solid var(--border);font-family:var(--mono)}
+.ev:last-child{border-bottom:none}
+.ev-t{color:var(--hint);flex-shrink:0;width:36px}
+.ev-g{color:var(--green)}
+.ev-w{color:var(--amber)}
+.ev-b{color:var(--red-d)}
+.ev-i{color:var(--blue)}
+
+/* BANNERS */
+.banner{border-radius:8px;padding:10px 14px;display:none;align-items:center;justify-content:space-between}
+.banner.on{display:flex}
+.banner-txt{font-family:var(--mono);font-size:11px}
+.banner-btn{border:none;padding:4px 12px;font-size:10px;border-radius:4px;cursor:pointer;font-family:var(--mono);letter-spacing:0.05em}
+.break-banner{background:var(--amber-bg);border:1px solid var(--amber-d)}
+.break-banner .banner-txt{color:var(--amber)}
+.break-banner .banner-btn{background:var(--amber-d);color:#000}
+.drowsy-banner{background:var(--purple-bg);border:1px solid var(--purple-d)}
+.drowsy-banner .banner-txt{color:var(--purple)}
+.drowsy-banner .banner-btn{background:var(--purple-d);color:#fff}
+.posture-banner{background:var(--blue-bg);border:1px solid var(--blue-d)}
+.posture-banner .banner-txt{color:var(--blue)}
+.posture-banner .banner-btn{background:var(--blue-d);color:#fff}
+
+/* KEYBOARD HINT */
+.kbd-hint{position:fixed;bottom:10px;right:14px;font-size:9px;color:var(--hint);font-family:var(--mono);pointer-events:none;z-index:100}
+kbd{background:var(--bg3);border:1px solid var(--border);padding:1px 5px;border-radius:3px;font-size:8px;color:var(--muted)}
+
+/* scrollbar */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* Toast notification */
+.toast{position:fixed;top:60px;right:20px;padding:8px 16px;border-radius:6px;font-family:var(--mono);font-size:11px;z-index:200;opacity:0;transform:translateY(-10px);transition:all 0.3s;pointer-events:none}
+.toast.show{opacity:1;transform:translateY(0)}
+.toast.success{background:var(--green-bg);border:1px solid var(--green-d);color:var(--green)}
+.toast.info{background:var(--blue-bg);border:1px solid var(--blue-d);color:var(--blue)}
+
+/* Distracted time popup */
+.distracted-popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%) scale(0.9);background:rgba(10,10,10,0.92);border:1px solid var(--amber-d);border-radius:12px;padding:20px 32px;text-align:center;z-index:150;opacity:0;pointer-events:none;transition:all 0.3s ease;backdrop-filter:blur(8px)}
+.distracted-popup.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.dp-label{font-family:var(--mono);font-size:9px;letter-spacing:0.15em;color:var(--amber-d);text-transform:uppercase;margin-bottom:6px}
+.dp-time{font-family:var(--mono);font-size:36px;color:var(--amber);font-weight:300;line-height:1}
+.dp-sub{font-family:var(--mono);font-size:10px;color:var(--hint);margin-top:6px}
+
+/* Pause overlay */
+.pause-overlay{position:fixed;inset:0;background:rgba(8,8,8,0.88);z-index:300;display:none;flex-direction:column;align-items:center;justify-content:center;backdrop-filter:blur(6px);padding:40px;text-align:center}
+.pause-overlay.on{display:flex}
+.pause-icon{font-size:48px;margin-bottom:20px;opacity:0.6}
+.pause-label{font-family:var(--mono);font-size:10px;letter-spacing:0.2em;color:var(--amber-d);text-transform:uppercase;margin-bottom:24px}
+.pause-quote{font-size:20px;color:var(--text);max-width:520px;line-height:1.6;font-weight:300;font-style:italic;opacity:0;transform:translateY(10px);transition:all 0.5s ease}
+.pause-quote.show{opacity:1;transform:translateY(0)}
+.pause-author{font-family:var(--mono);font-size:11px;color:var(--amber);margin-top:14px;opacity:0;transition:opacity 0.5s ease 0.3s}
+.pause-author.show{opacity:1}
+.pause-hint{font-family:var(--mono);font-size:9px;color:var(--hint);margin-top:40px;letter-spacing:0.1em}
+.pause-hint kbd{background:var(--bg3);border:1px solid var(--border);padding:1px 5px;border-radius:3px;font-size:8px;color:var(--muted)}
+
+/* POMODORO */
+.pomo-sec{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:14px;position:relative}
+.pomo-sec::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;transition:background 0.3s;z-index:1;border-radius:8px 8px 0 0}
+.pomo-sec.work::before{background:var(--red-d)}
+.pomo-sec.short::before{background:var(--green)}
+.pomo-sec.long::before{background:var(--blue)}
+.pomo-sec.idle::before{background:var(--border)}
+.pomo-layout{display:flex;align-items:center;gap:18px}
+.pomo-ring-wrap{flex-shrink:0;width:120px;height:120px}
+.pomo-ring{position:relative;width:120px;height:120px}
+.pomo-ring svg{transform:rotate(-90deg);display:block}
+.pomo-ring-center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.pomo-time{font-family:var(--mono);font-size:22px;font-weight:300;line-height:1}
+.pomo-phase{font-family:var(--mono);font-size:8px;letter-spacing:0.12em;text-transform:uppercase;margin-top:4px}
+.pomo-info{flex:1;display:flex;flex-direction:column;gap:8px}
+.pomo-controls{display:flex;gap:6px;flex-wrap:wrap}
+.pomo-btn{background:var(--bg3);color:var(--muted);border:1px solid var(--border);padding:5px 14px;border-radius:4px;cursor:pointer;font-size:10px;font-family:var(--mono);letter-spacing:0.05em;transition:all 0.2s}
+.pomo-btn:hover{color:var(--text);border-color:var(--hint)}
+.pomo-btn.primary{color:var(--green);border-color:var(--green-d)}
+.pomo-btn.primary:hover{background:var(--green-bg)}
+.pomo-btn.danger{color:var(--red-d);border-color:var(--red-d)}
+.pomo-btn.danger:hover{background:var(--red-bg)}
+.pomo-stats{display:flex;gap:16px}
+.pomo-stat{display:flex;flex-direction:column;gap:1px}
+.pomo-stat-lbl{font-size:8px;letter-spacing:0.1em;color:var(--hint);text-transform:uppercase;font-family:var(--mono)}
+.pomo-stat-val{font-size:14px;font-family:var(--mono)}
+.pomo-rounds{display:flex;gap:4px;align-items:center}
+.pomo-dot{width:10px;height:10px;border-radius:50%;border:1.5px solid var(--border);transition:all 0.3s}
+.pomo-dot.done{background:var(--green);border-color:var(--green)}
+.pomo-dot.active{border-color:var(--amber);box-shadow:0 0 6px rgba(239,159,39,0.4)}
+.pomo-dot.break-done{background:var(--blue);border-color:var(--blue)}
+.pomo-settings{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.pomo-settings label{font-size:8px;color:var(--hint);font-family:var(--mono);letter-spacing:0.05em;text-transform:uppercase}
+.pomo-settings input{width:40px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:2px 4px;font-family:var(--mono);font-size:10px;border-radius:3px;text-align:center}
+
+/* Ambient player */
+.ambient-wrap{display:flex;align-items:center;gap:4px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:2px 3px}
+.amb-btn{background:none;border:1px solid transparent;color:var(--hint);padding:3px 8px;border-radius:4px;cursor:pointer;font-size:9px;font-family:var(--mono);letter-spacing:0.04em;transition:all 0.2s;white-space:nowrap}
+.amb-btn:hover{color:var(--text);background:var(--bg)}
+.amb-btn.playing{color:var(--green);border-color:var(--green-d);background:var(--green-bg)}
+.amb-vol{width:48px;height:3px;-webkit-appearance:none;appearance:none;background:var(--border);border-radius:2px;outline:none;cursor:pointer}
+.amb-vol::-webkit-slider-thumb{-webkit-appearance:none;width:8px;height:8px;border-radius:50%;background:var(--amber);cursor:pointer}
+
+/* SESSION SUMMARY MODAL */
+.summary-modal{position:fixed;inset:0;z-index:400;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.75);backdrop-filter:blur(8px)}
+.summary-modal.on{display:flex}
+.summary-card{background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:28px 32px;max-width:480px;width:90%;position:relative;overflow:hidden}
+.summary-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--amber),var(--green),var(--blue),var(--purple))}
+.summary-title{font-family:var(--mono);font-size:10px;letter-spacing:0.18em;color:var(--amber);text-transform:uppercase;margin-bottom:18px}
+.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px 24px;margin-bottom:20px}
+.summary-stat{display:flex;flex-direction:column;gap:2px}
+.summary-stat-lbl{font-size:8px;letter-spacing:0.1em;color:var(--hint);text-transform:uppercase;font-family:var(--mono)}
+.summary-stat-val{font-size:18px;font-family:var(--mono);font-weight:400;line-height:1.2}
+.summary-motivation{font-family:var(--mono);font-size:12px;padding:10px 14px;border-radius:6px;background:var(--bg3);border:1px solid var(--border);margin-bottom:18px;line-height:1.5;text-align:center}
+.summary-actions{display:flex;gap:10px;justify-content:flex-end}
+.summary-actions button{padding:6px 18px;border-radius:4px;cursor:pointer;font-size:10px;font-family:var(--mono);letter-spacing:0.05em;transition:all 0.2s}
+.summary-close{background:var(--bg3);color:var(--muted);border:1px solid var(--border)}
+.summary-close:hover{color:var(--text);border-color:var(--hint)}
+.summary-export{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-d)}
+.summary-export:hover{background:var(--amber-d);color:#000}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="hdr-brand">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="7" stroke="#EF9F27" stroke-width="1"/>
+      <circle cx="8" cy="8" r="3" fill="#EF9F27" opacity="0.5"/>
+    </svg>
+    <span>FOCUS_MONITOR</span>
+  </div>
+  <div class="hdr-right">
+    <div class="ambient-wrap">
+      <button class="amb-btn" id="ambRain" title="Rain sounds">Rain</button>
+      <button class="amb-btn" id="ambForest" title="Forest sounds">Forest</button>
+      <button class="amb-btn" id="ambLofi" title="Lofi beats">Lofi</button>
+      <input type="range" class="amb-vol" id="ambVol" min="0" max="100" value="40" title="Volume">
+    </div>
+    <button class="hdr-btn" id="sensBtn" title="Focus sensitivity [S]">Sens: Normal</button>
+    <button class="hdr-btn" id="calibBtn" title="Calibrate center position [C]">Calibrate</button>
+    <button class="hdr-btn" id="soundBtn" title="Toggle audio cues [M]">Sound: OFF</button>
+    <button class="hdr-btn" id="exportBtn" title="Export session data [E]">Export</button>
+    <button class="hdr-btn" id="summaryBtn" title="Session summary [Q]">Summary</button>
+    <div class="clock" id="clk">--:--:--</div>
+    <div class="pill" id="sPill" style="background:var(--bg3);color:var(--muted);border-color:var(--border)">
+      <div class="dot" id="sDot" style="background:var(--muted)"></div>
+      <span id="sTxt">INIT</span>
+    </div>
+  </div>
+</div>
+
+<div class="body">
+  <div class="cam-panel">
+    <div class="cam-view">
+      <video id="vid" playsinline autoplay muted></video>
+      <canvas id="cnv"></canvas>
+      <div class="cam-corners">
+        <div class="brk tl"></div><div class="brk tr"></div>
+        <div class="brk bl"></div><div class="brk br"></div>
+      </div>
+      <!-- Calibration overlay -->
+      <div class="calib-overlay" id="calibOverlay">
+        <div class="calib-ring"><div class="calib-ring-inner"></div></div>
+        <div class="calib-text">Look at your screen naturally<br>and stay still</div>
+        <div class="calib-countdown" id="calibCountdown">3</div>
+      </div>
+      <!-- Posture indicator -->
+      <div class="posture-indicator" id="postureTag">GOOD POSTURE</div>
+      <div class="state-badge" id="sBadge" style="color:var(--muted)">LOADING</div>
+      <div class="no-cam" id="noCam">
+        <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+          <circle cx="20" cy="20" r="19" stroke="#666" stroke-width="1.5"/>
+          <circle cx="20" cy="16" r="6" stroke="#666" stroke-width="1.5"/>
+          <path d="M7 36c0-7.18 5.82-13 13-13s13 5.82 13 13" stroke="#666" stroke-width="1.5"/>
+        </svg>
+        <h3>Camera Required</h3>
+        <p>Allow camera access to start tracking. All processing runs locally.</p>
+        <button class="cam-btn" id="camBtn">Enable Camera</button>
+        <p id="errMsg" style="color:var(--red-d);font-size:10px;margin-top:4px"></p>
+      </div>
+    </div>
+    <div class="raw-stats">
+      <div class="rs"><div class="rs-l">Yaw</div><div class="rs-v" id="cYaw">—</div></div>
+      <div class="rs"><div class="rs-l">Pitch</div><div class="rs-v" id="cPitch">—</div></div>
+      <div class="rs"><div class="rs-l">Blinks</div><div class="rs-v" id="cBlinks">0</div></div>
+      <div class="rs"><div class="rs-l">EAR</div><div class="rs-v" id="cEAR">—</div></div>
+      <div class="rs"><div class="rs-l">Posture</div><div class="rs-v" id="cPosture">—</div></div>
+    </div>
+  </div>
+
+  <div class="dash">
+    <!-- Banners -->
+    <div class="banner break-banner" id="brkBanner">
+      <div class="banner-txt" id="brkBannerTxt">Time for a break!</div>
+      <button class="banner-btn" id="brkDismissBtn">Dismiss</button>
+    </div>
+    <div class="banner drowsy-banner" id="drowsyBanner">
+      <div class="banner-txt">You look tired — consider a short break</div>
+      <button class="banner-btn" id="drowsyDismissBtn">Got it</button>
+    </div>
+    <div class="banner posture-banner" id="postureBanner">
+      <div class="banner-txt">Sit up straight! Slouching detected for 30s+</div>
+      <button class="banner-btn" id="postureDismissBtn">Fixed</button>
+    </div>
+
+    <!-- Metrics row -->
+    <div class="metric-row">
+      <div class="mc amber">
+        <div class="mc-lbl">Session</div>
+        <div class="mc-val" id="mSession" style="color:var(--amber)">00:00</div>
+        <div class="mc-sub">total active</div>
+      </div>
+      <div class="mc green">
+        <div class="mc-lbl">Focused</div>
+        <div class="mc-val" id="mFocus" style="color:var(--green)">00:00</div>
+        <div class="mc-sub">head on screen</div>
+      </div>
+      <div class="mc red">
+        <div class="mc-lbl">Away</div>
+        <div class="mc-val" id="mAway" style="color:var(--red-d)">00:00</div>
+        <div class="mc-sub">not detected</div>
+      </div>
+      <div class="mc blue">
+        <div class="mc-lbl">Streak</div>
+        <div class="mc-val" id="mStreak" style="color:var(--blue)">00:00</div>
+        <div class="mc-sub" id="mStreakSub">current focus</div>
+      </div>
+    </div>
+
+    <!-- Pomodoro Timer -->
+    <div class="pomo-sec idle" id="pomoSec">
+      <div class="pomo-layout">
+        <div class="pomo-ring-wrap">
+          <div class="pomo-ring">
+            <svg width="120" height="120" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="54" fill="none" stroke="var(--border)" stroke-width="3"/>
+              <circle cx="60" cy="60" r="54" fill="none" stroke="var(--amber)" stroke-width="3" stroke-linecap="round" stroke-dasharray="339.29" stroke-dashoffset="0" id="pomoArc"/>
+            </svg>
+            <div class="pomo-ring-center">
+              <div class="pomo-time" id="pomoTime">25:00</div>
+              <div class="pomo-phase" id="pomoPhase" style="color:var(--muted)">Ready</div>
+            </div>
+          </div>
+        </div>
+        <div class="pomo-info">
+          <div class="pomo-rounds" id="pomoRounds">
+            <div class="pomo-dot"></div>
+            <div class="pomo-dot"></div>
+            <div class="pomo-dot"></div>
+            <div class="pomo-dot"></div>
+          </div>
+          <div class="pomo-controls">
+            <button class="pomo-btn primary" id="pomoStartBtn">Start</button>
+            <button class="pomo-btn" id="pomoSkipBtn" style="display:none">Skip</button>
+            <button class="pomo-btn danger" id="pomoResetBtn" style="display:none">Reset</button>
+          </div>
+          <div class="pomo-stats">
+            <div class="pomo-stat">
+              <div class="pomo-stat-lbl">Completed</div>
+              <div class="pomo-stat-val" id="pomoCompleted" style="color:var(--green)">0</div>
+            </div>
+            <div class="pomo-stat">
+              <div class="pomo-stat-lbl">Total Focus</div>
+              <div class="pomo-stat-val" id="pomoTotalFocus" style="color:var(--amber)">0m</div>
+            </div>
+            <div class="pomo-stat">
+              <div class="pomo-stat-lbl">Cycle</div>
+              <div class="pomo-stat-val" id="pomoCycle" style="color:var(--muted)">1 / 4</div>
+            </div>
+          </div>
+          <div class="pomo-settings">
+            <label>Work</label>
+            <input type="number" id="pomoWorkInput" value="25" min="1" max="90">
+            <label>Short</label>
+            <input type="number" id="pomoShortInput" value="5" min="1" max="30">
+            <label>Long</label>
+            <input type="number" id="pomoLongInput" value="15" min="5" max="60">
+            <label>Rounds</label>
+            <input type="number" id="pomoRoundsInput" value="4" min="2" max="8">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <!-- Focus Score -->
+      <div class="sec">
+        <div class="sec-title">Focus Score</div>
+        <div class="fb-row">
+          <div class="fb-hdr">
+            <span class="fb-lbl">Session average</span>
+            <span class="fb-pct" id="fScore" style="color:var(--green)">—</span>
+          </div>
+          <div class="fbar"><div class="fbar-fill" id="fFill" style="width:0%;background:var(--green)"></div></div>
+        </div>
+        <div class="fb-row" style="margin-bottom:0">
+          <div class="fb-hdr">
+            <span class="fb-lbl">Last 5 minutes</span>
+            <span class="fb-pct" id="rScore" style="color:var(--amber)">—</span>
+          </div>
+          <div class="fbar"><div class="fbar-fill" id="rFill" style="width:0%;background:var(--amber)"></div></div>
+        </div>
+      </div>
+
+      <!-- Daily Goal -->
+      <div class="sec">
+        <div class="sec-title">Daily Goal</div>
+        <div class="goal-ring-wrap">
+          <div class="goal-ring">
+            <svg width="60" height="60" viewBox="0 0 60 60">
+              <circle cx="30" cy="30" r="26" fill="none" stroke="var(--border)" stroke-width="4"/>
+              <circle cx="30" cy="30" r="26" fill="none" stroke="var(--green)" stroke-width="4" stroke-linecap="round" stroke-dasharray="163.36" stroke-dashoffset="163.36" id="goalArc"/>
+            </svg>
+            <div class="goal-ring-pct" id="goalPct" style="color:var(--green)">0%</div>
+          </div>
+          <div class="goal-info">
+            <span id="goalProgress">0m / 120m focused</span>
+            <span id="goalToday" style="color:var(--hint);font-size:9px">Today's sessions: 0</span>
+            <div class="goal-set">
+              <input type="number" id="goalInput" value="120" min="10" max="600">
+              <label>min goal</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="two-col">
+      <!-- Head Pose -->
+      <div class="sec">
+        <div class="sec-title">
+          <span>Head Pose</span>
+          <span id="calibStatus" style="color:var(--hint);font-size:9px">not calibrated</span>
+        </div>
+        <div class="pose-grid">
+          <div>
+            <div class="pi-lbl">Yaw</div>
+            <div class="pi-track"><div class="pi-center"></div><div class="pi-fill" id="yBar"></div></div>
+            <div class="pi-val" id="yLbl" style="color:var(--muted)">0°</div>
+            <div class="pi-zone" id="yZone">on target</div>
+          </div>
+          <div>
+            <div class="pi-lbl">Pitch</div>
+            <div class="pi-track"><div class="pi-center"></div><div class="pi-fill" id="pBar"></div></div>
+            <div class="pi-val" id="pLbl" style="color:var(--muted)">0°</div>
+            <div class="pi-zone" id="pZone">on target</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Posture & Drowsiness -->
+      <div class="sec">
+        <div class="sec-title">Body & Alertness</div>
+        <div class="posture-grid">
+          <div class="posture-item">
+            <div class="posture-label">Posture</div>
+            <div class="posture-val" id="postureScore" style="color:var(--green)">—</div>
+            <div style="font-size:9px;color:var(--hint);margin-top:2px" id="postureText">waiting</div>
+          </div>
+          <div class="posture-item">
+            <div class="posture-label">Face Y Pos</div>
+            <div class="posture-val" id="faceYPos" style="color:var(--muted)">—</div>
+            <div style="font-size:9px;color:var(--hint);margin-top:2px" id="faceYText">baseline</div>
+          </div>
+          <div class="posture-item">
+            <div class="posture-label">Alertness</div>
+            <div class="posture-val" id="alertScore" style="color:var(--green)">—</div>
+            <div style="font-size:9px;color:var(--hint);margin-top:2px" id="alertText">awake</div>
+          </div>
+        </div>
+        <div style="margin-top:10px">
+          <div class="drowsy-bar">
+            <span style="font-size:9px;color:var(--hint);font-family:var(--mono);width:60px">DROWSY</span>
+            <div class="drowsy-level"><div class="drowsy-fill" id="drowsyFill" style="width:0%;background:var(--green)"></div></div>
+            <span class="drowsy-label" id="drowsyLbl" style="color:var(--green)">Alert</span>
+          </div>
+          <div class="drowsy-stats">
+            <div class="drowsy-stat">Blink rate: <b id="blinkRate">0</b>/min</div>
+            <div class="drowsy-stat">Avg EAR: <b id="avgEAR">—</b></div>
+            <div class="drowsy-stat">Long blinks: <b id="longBlinks">0</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Focus Streaks -->
+    <div class="sec">
+      <div class="sec-title">Focus Streaks</div>
+      <div class="streak-row">
+        <div class="streak-item">
+          <div class="streak-num" id="curStreak" style="color:var(--blue)">0:00</div>
+          <div class="streak-lbl">Current</div>
+        </div>
+        <div class="streak-item">
+          <div class="streak-num" id="bestStreak" style="color:var(--amber)">0:00</div>
+          <div class="streak-lbl">Best Today</div>
+        </div>
+        <div class="streak-item">
+          <div class="streak-num" id="allTimeBest" style="color:var(--green)">0:00</div>
+          <div class="streak-lbl">All-Time Best</div>
+        </div>
+        <div class="streak-item">
+          <div class="streak-num" id="streakCount" style="color:var(--muted)">0</div>
+          <div class="streak-lbl">Streaks Today</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Session Timeline -->
+    <div class="sec">
+      <div class="sec-title">
+        <span>Session Timeline — 1 bar = 1 min</span>
+        <span class="sec-title-right">
+          <span style="color:var(--green);font-size:9px">█ focused</span>
+          <span style="color:var(--amber);font-size:9px">█ partial</span>
+          <span style="color:var(--red-d);font-size:9px">█ away</span>
+        </span>
+      </div>
+      <div class="tl-bars" id="tlBars"></div>
+    </div>
+
+    <!-- Weekly Heatmap -->
+    <div class="sec">
+      <div class="sec-title">Weekly Focus Heatmap — past 7 days</div>
+      <div class="heatmap-wrap">
+        <div class="heatmap" id="heatmap"></div>
+        <div class="hm-labels" id="hmLabels"></div>
+      </div>
+    </div>
+
+    <!-- Tab Activity -->
+    <div class="sec">
+      <div class="sec-title">Tab Activity</div>
+      <div style="display:flex;gap:20px;">
+        <div>
+          <div style="font-size:9px;color:var(--hint);font-family:var(--mono)">TAB VISIBLE</div>
+          <div style="font-family:var(--mono);font-size:16px;color:var(--green)" id="tabVisible">00:00</div>
+        </div>
+        <div>
+          <div style="font-size:9px;color:var(--hint);font-family:var(--mono)">TAB HIDDEN</div>
+          <div style="font-family:var(--mono);font-size:16px;color:var(--red-d)" id="tabHidden">00:00</div>
+        </div>
+        <div>
+          <div style="font-size:9px;color:var(--hint);font-family:var(--mono)">TAB SWITCHES</div>
+          <div style="font-family:var(--mono);font-size:16px;color:var(--amber)" id="tabSwitches">0</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Event Log -->
+    <div class="sec">
+      <div class="sec-title">Event Log</div>
+      <div class="ev-list" id="evList">
+        <div class="ev"><span class="ev-t">—</span><span class="ev-g">Waiting for camera...</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="pause-overlay" id="pauseOverlay">
+  <div class="pause-icon">||</div>
+  <div class="pause-label">Paused</div>
+  <div class="pause-quote" id="pauseQuote"></div>
+  <div class="pause-author" id="pauseAuthor"></div>
+  <div class="pause-hint">Press <kbd>Space</kbd> to resume</div>
+</div>
+
+<div class="distracted-popup" id="distractedPopup">
+  <div class="dp-label">Distracted</div>
+  <div class="dp-time" id="dpTime">0:00</div>
+  <div class="dp-sub">time away from focus</div>
+</div>
+
+<!-- Session Summary Modal -->
+<div class="summary-modal" id="summaryModal">
+  <div class="summary-card">
+    <div class="summary-title">Session Summary</div>
+    <div class="summary-grid">
+      <div class="summary-stat">
+        <div class="summary-stat-lbl">Session Duration</div>
+        <div class="summary-stat-val" id="sumDuration" style="color:var(--amber)">--:--</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-lbl">Focus Time</div>
+        <div class="summary-stat-val" id="sumFocus" style="color:var(--green)">--:--</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-lbl">Focus %</div>
+        <div class="summary-stat-val" id="sumFocusPct" style="color:var(--green)">--%</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-lbl">Distractions</div>
+        <div class="summary-stat-val" id="sumDistractions" style="color:var(--red-d)">0</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-lbl">Best Streak</div>
+        <div class="summary-stat-val" id="sumBestStreak" style="color:var(--blue)">0:00</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-lbl">Blinks</div>
+        <div class="summary-stat-val" id="sumBlinks" style="color:var(--purple)">0</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-lbl">Posture Score (Avg)</div>
+        <div class="summary-stat-val" id="sumPosture" style="color:var(--blue)">--</div>
+      </div>
+      <div class="summary-stat">
+        <div class="summary-stat-lbl">Pomodoro Rounds</div>
+        <div class="summary-stat-val" id="sumPomo" style="color:var(--amber)">0</div>
+      </div>
+    </div>
+    <div class="summary-motivation" id="sumMotivation">--</div>
+    <div class="summary-actions">
+      <button class="summary-close" id="summaryCloseBtn">Close</button>
+      <button class="summary-export" id="summaryExportBtn">Export &amp; Close</button>
+    </div>
+  </div>
+</div>
+
+<div class="kbd-hint">
+  <kbd>S</kbd> sensitivity &nbsp; <kbd>C</kbd> calibrate &nbsp; <kbd>M</kbd> mute &nbsp; <kbd>E</kbd> export &nbsp; <kbd>Q</kbd> summary &nbsp; <kbd>Space</kbd> pause &nbsp; <kbd>P</kbd> pomodoro &nbsp; <kbd>N</kbd> skip &nbsp; <kbd>1</kbd> rain &nbsp; <kbd>2</kbd> forest &nbsp; <kbd>3</kbd> lofi &nbsp; <kbd>0</kbd> stop
+</div>
+
+<script src="lib/mediapipe/face_mesh.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
